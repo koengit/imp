@@ -14,6 +14,7 @@ data P
   | If E P P
   | V := E
   | Skip
+  | Break
  deriving ( Eq, Ord, Show )
 
 instance Arbitrary P where
@@ -37,6 +38,7 @@ instance Arbitrary P where
                e <- arbitrary
                return (x := e))
       , (1, do return Skip)
+      -- , (1, do return Break)
       ]
      where
       n2 = n `div` 2
@@ -57,6 +59,7 @@ instance Arbitrary P where
                      ++ [ If e p q' | q' <- shrink q ]
   shrink (x := e)     = [Skip]
                      ++ [ x := e' | e' <- shrink e ]
+  shrink Break        = [Skip]
   shrink Skip         = []
 
 
@@ -66,6 +69,7 @@ free (p :>> q)    = free p `union` free q
 free (While e p)  = freeE e `union` free p
 free (If e p q)   = freeE e `union` free p `union` free q
 free (x := e)     = [x] `union` freeE e
+free Break        = []
 free Skip         = []
 
 showP :: P -> [String]
@@ -83,6 +87,7 @@ showP (If e p q)   = [ "if (" ++ show e ++ ") {" ]
                   ++ nest 2 (showP q)
                   ++ [ "}" ]
 showP (x := e)     = [ x ++ " = " ++ show e ++ ";" ]
+showP Break        = [ "break;" ]
 showP Skip         = []
 
 nest :: Int -> [String] -> [String]
@@ -92,6 +97,7 @@ data E
   = Var V
   | Int Integer
   | E :+: E
+  | Inc V
  deriving ( Eq, Ord )
 
 instance Arbitrary E where
@@ -101,6 +107,8 @@ instance Arbitrary E where
       [ (n, do a <- arbE n2
                b <- arbE n2
                return (a :+: b))
+      , (1, do v <- arbV
+               return (Inc v))
       , (1, do n <- arbitrary
                return (Int n))
       , (1, do v <- arbV
@@ -113,6 +121,7 @@ instance Arbitrary E where
   shrink (a :+: b) = [a,b]
                   ++ [ a' :+: b | a' <- shrink a ]
                   ++ [ a :+: b' | b' <- shrink b ]
+  shrink (Inc x)   = [Var x]
   shrink (Var x)   = [Int 0, Int 1]
   shrink (Int n)   = [Int n' | n' <- shrink n]
 
@@ -120,11 +129,13 @@ arbV = growingElements [ "x" ++ show i | i <- [1..15] ]
 
 freeE :: E -> [V]
 freeE (Var x)   = [x]
+freeE (Inc x)   = [x]
 freeE (Int _)   = []
 freeE (a :+: b) = freeE a `union` freeE b
 
 instance Show E where
   show (Var x)   = x
+  show (Inc x)   = x ++ "++"
   show (Int n)   = show n
   show (a :+: b) = "(" ++ show a ++ "+" ++ show b ++ ")"
 
@@ -153,7 +164,7 @@ crun st p =
           ]
        ++ [ "}" ]
      system "gcc program.c"
-     system "./a.out > output"
+     system "( ulimit -t 1 ; ./a.out > output )"
      s <- readFile "output"
      let st' = [ (x,read v) | ["STATE",x,"=",v] <- map words (lines s) ]
      length st' `seq` return st'
@@ -162,6 +173,11 @@ crun st p =
 
 p = "x" := (Var "x" :+: Int 1)
 st = [("x",3)]
+
+arbState :: [V] -> Gen State
+arbState xs =
+  do vs <- sequence [ arbitrary | x <- xs ]
+     return (xs `zip` vs)
 
 prop_Seq p q =
   monadicIO $
@@ -178,9 +194,32 @@ prop_Seq p q =
  where
   xs = free p `union` free q
 
-arbState :: [V] -> Gen State
-arbState xs =
-  do vs <- sequence [ arbitrary | x <- xs ]
-     return (xs `zip` vs)
+prop_While e p =
+  monadicIO $
+    do st1  <- pick (arbState xs)
+    
+       -- running while(e)p
+       st2a <- run (crun st1 (While e p))
+       
+       -- running p and q    
+       st2b <- run (crun st1 (If e (p :>> While e p) Skip))
+       
+       assert (st2a == st2b)
+ where
+  xs = freeE e `union` free p
 
+prop_If e p q =
+  monadicIO $
+    do st1  <- pick (arbState xs)
+    
+       -- running if(e)pq
+       st3a <- run (crun st1 (If e p q))
+       
+       -- running p and q    
+       st2  <- run (crun (("b",0):st1) ("b" := e))
+       st3b <- run (crun st1 (if head [ v | ("b",v) <- st2 ] /= 0 then p else q))
+
+       assert (st3a == st3b)
+ where
+  xs = freeE e `union` free p `union` free q
 
