@@ -17,11 +17,17 @@ data P
   | Break
  deriving ( Eq, Ord, Show )
 
+newtype Vars = Vars [V] deriving ( Eq, Ord, Show )
+
+instance Arbitrary Vars where
+  arbitrary        = (Vars . nub) `fmap` listOf arbV
+  shrink (Vars xs) = [ Vars (nub xs') | xs' <- shrinkList (\_ -> []) xs ]
+
 instance Arbitrary P where
   arbitrary = sized arbP
    where
     arbP n = frequency
-      [ (n, do xs <- nub `fmap` listOf arbV
+      [ (n, do Vars xs <- arbitrary
                p <- arbP n1
                return (Block xs p))
       , (n, do p <- arbP n2
@@ -107,8 +113,8 @@ instance Arbitrary E where
       [ (n, do a <- arbE n2
                b <- arbE n2
                return (a :+: b))
-      , (1, do v <- arbV
-               return (Inc v))
+      --, (1, do v <- arbV
+      --         return (Inc v))
       , (1, do n <- arbitrary
                return (Int n))
       , (1, do v <- arbV
@@ -155,7 +161,7 @@ crun st p =
        ++ [ ""
           , "  /* the program */"
           ]
-       ++ nest 2 (showP p)
+       ++ nest 2 (showP (trans [] p))
        ++ [ ""
           , "  /* printing free variables */"
           ]
@@ -170,6 +176,14 @@ crun st p =
      length st' `seq` return st'
  where
   xs = map fst st          
+
+  trans zs (Block xs p) =
+    Block (filter (`notElem` zs) xs) (trans (zs `union` xs) p)
+  
+  trans zs (p :>> q)   = trans zs p :>> trans zs q
+  trans zs (While e p) = While e (trans zs p)
+  trans zs (If e p q)  = If e (trans zs p) (trans zs q)
+  trans zs p           = p 
 
 p = "x" := (Var "x" :+: Int 1)
 st = [("x",3)]
@@ -222,4 +236,20 @@ prop_If e p q =
        assert (st3a == st3b)
  where
   xs = freeE e `union` free p `union` free q
+
+prop_Block (Vars ys) p =
+  monadicIO $
+    do st1  <- pick (arbState xs)
+    
+       st2a <- run (crun st1 (Block ys p))
+       st2b <- run (crun ((ys `zip` repeat 0) ++ filter ((`notElem` ys).fst) st1) p)
+       
+       monitor $ whenFail (print st2a)
+       monitor $ whenFail (print st2b)
+       
+       assert (sort st2a == sort ( filter ((`elem` ys).fst) st1
+                                ++ filter ((`notElem` ys).fst) st2b
+                                 ))
+ where
+  xs = free p `union` ys
 
