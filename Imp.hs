@@ -4,7 +4,7 @@ module Imp where
 
 import Data.List hiding (map,insert)
 import System.Cmd
-import Data.Map hiding (map, union, (\\))
+import Data.Map hiding (map, union, (\\),filter)
 import qualified Data.Map as Map
 import Test.QuickCheck
 import Test.QuickCheck.Monadic
