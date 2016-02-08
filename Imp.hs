@@ -1,7 +1,11 @@
+
+
 module Imp where
 
-import Data.List
+import Data.List hiding (map,insert)
 import System.Cmd
+import Data.Map hiding (map, union, (\\))
+import qualified Data.Map as Map
 import Test.QuickCheck
 import Test.QuickCheck.Monadic
 
@@ -222,4 +226,44 @@ prop_If e p q =
        assert (st3a == st3b)
  where
   xs = freeE e `union` free p `union` free q
+
+type Env = Map V Integer
+
+interpretE :: E -> Env -> (Integer, Env)
+interpretE (Var v) e = (e ! v, e)
+interpretE (Int i) e = (i, e)
+interpretE (l :+: r) e = 
+    let (li, e' ) = interpretE l e
+        (ri, e'') = interpretE r e'
+    in (li + ri, e'')
+interpretE (Inc v) e = (e ! v , adjust (+ 1) v e)
+
+initVars :: [V] -> Env
+initVars vars = fromList $ fmap (\x -> (x,0)) vars
+
+interpret :: P -> Env -> Env
+interpret (Block vars p) e = interpret p (initVars vars `Map.union` e)
+interpret (f :>> g)      e = interpret g (interpret f e)
+interpret (While c b)    e = 
+    let (cv, e') = interpretE c e
+    in if cv /= 0
+       then interpret (b :>> While c b) e'
+       else e'
+interpret (If c t f) e = 
+    let (cv, e') = interpretE c e
+    in if cv /= 0
+       then interpret t e'
+       else interpret f e'
+interpret (v := exp) e = 
+    let (i, e') = interpretE exp e
+    in insert v i e'
+interpret Skip e = e
+interpret Break e = e -- break = skip
+  
+propInterpreterSane :: P -> Bool
+propInterpreterSane p = 
+   let res = interpret p (initVars (free p))
+   in length (toList res) `seq` True
+
+      
 
