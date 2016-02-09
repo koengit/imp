@@ -92,9 +92,10 @@ instance Arbitrary P where
   arbitrary = sized arbP
    where
     arbP n = frequency
-      [ (n, do Vars xs <- arbitrary
+      [ (n, do --Vars xs <- arbitrary
+               x <- arbitrary
                p <- arbP n1
-               return (Block xs p))
+               return (Block [x] p))
       , (n, do p <- arbP n2
                q <- arbP n2
                return (p :>> q))
