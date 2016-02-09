@@ -1,7 +1,7 @@
 module Imp where
 
 import Data.List
-import Data.Map( Map )
+import Data.Map( Map, (!) )
 import qualified Data.Map as M
 import Test.QuickCheck
 
@@ -172,6 +172,9 @@ arbS :: [V] -> Gen S
 arbS xs =
   do vs <- sequence [ arbitrary | x <- xs ]
      return (M.fromList (xs `zip` vs))
+
+shrinkS :: S -> [S]
+shrinkS st = [ M.insert x v' st | x <- M.keys st, v' <- shrink (st ! x) ]
 
 --------------------------------------------------------------------------------
 
