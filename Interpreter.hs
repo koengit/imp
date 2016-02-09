@@ -25,7 +25,10 @@ initVars vars = M.fromList $ fmap (\x -> (x,0)) vars
 -- programs
 
 interpret :: P -> S -> S
-interpret (Block vars p) e = interpret p (initVars vars `union` e)
+interpret (Block vars p) e = oldValsMap `union` resMap
+   where resMap =  interpret p (initVars vars `union` e)
+         oldVars = filter (`M.member` e) vars
+         oldValsMap = M.fromList $ zip oldVars (map (e !) oldVars)
 interpret (f :>> g)      e = interpret g (interpret f e)
 interpret (While c b)    e = 
     let (cv, e') = interpretE c e
