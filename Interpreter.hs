@@ -25,10 +25,10 @@ initVars vars = M.fromList $ fmap (\x -> (x,0)) vars
 -- programs
 
 interpret :: P -> S -> S
-interpret (Block vars p) e = oldValsMap `union` resMap
-   where resMap =  interpret p (initVars vars `union` e)
-         oldVars = filter (`M.member` e) vars
-         oldValsMap = M.fromList $ zip oldVars (map (e !) oldVars)
+interpret (Block vars p) e = (oldVars `union` resMap) `M.intersection` e
+   where resMap =  interpret p (newVars `union` e)
+         newVars = initVars vars 
+         oldVars = e `M.intersection` newVars
 interpret (f :>> g)      e = interpret g (interpret f e)
 interpret (While c b)    e = 
     let (cv, e') = interpretE c e
